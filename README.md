@@ -1,2 +1,78 @@
-# multi-project-creator
-This feature enables developers to create multiple workspaces for a single code repository by leveraging different Git branches. It supports parallel development of multiple tasks by one developer in the same project, significantly cutting down the overhead of manually cloning additional local working directories.
+# Multi-Project Creator
+
+多工作区创建工具，帮助开发者在同一项目中基于不同的 Git 分支创建多个工作区，大大减少手动克隆新项目的时间。
+
+## 功能特点
+
+- 📦 支持工程模板管理，可快速选择已配置的工程
+- 🔗 支持在同一工作区下克隆多个 Git 仓库
+- 🌿 每个仓库支持独立的分支配置
+- 💻 支持多种 IDE 自动打开（VSCode、Cursor、Qoder、Kiro、IDEA）
+- 📝 实时执行日志显示
+- 🎨 简洁美观的弹窗式界面
+
+## 快捷键
+
+| 功能 | Mac | Windows/Linux |
+|------|-----|--------------|
+| 创建工作区 | `Cmd + Control + W` | `Ctrl + Alt + W` |
+| 查看项目列表 | `Cmd + Control + L` | `Ctrl + Alt + L` |
+
+## 使用方法
+
+### 1. 打开创建界面
+
+- 使用快捷键 `Cmd + Control + W`（Mac）或 `Ctrl + Alt + W`（Windows/Linux）
+- 或通过命令面板输入「Multi-Project Creator: Create Project」
+
+### 2. 维护工程列表（可选）
+
+点击「📦 工程列表」按钮打开工程管理弹窗：
+- **添加工程**：填写工程名称和 Git 地址，点击添加
+- **编辑工程**：点击编辑按钮修改信息，点击保存
+- **删除工程**：点击删除按钮移除工程
+
+### 3. 填写工作区信息
+
+**需求名称**：输入需求名称（仅支持英文、数字和下划线）
+
+**工作区路径**：输入或点击「浏览...」选择本地工作目录
+
+**选择工程**：
+- 从下拉框选择已保存的工程
+- 点击「使用选中工程」快速填充 Git 仓库地址
+
+**Git 仓库列表**：
+- 点击「+ 添加仓库」添加多个仓库
+- 每个仓库可配置独立的分支名
+- 点击「删除」移除不需要的仓库
+
+**目标 IDE**：选择用于打开工作区的 IDE
+
+### 4. 创建工作区
+
+点击「创建工作区」按钮，插件会自动：
+1. 在工作区路径下创建以需求名称命名的文件夹
+2. 克隆所有配置的 Git 仓库
+3. 切换到指定分支（如不存在则新建）
+4. 使用选中的 IDE 打开工作区
+
+### 5. 查看项目列表
+
+- 使用快捷键 `Cmd + Control + L`（Mac）或 `Ctrl + Alt + L`（Windows/Linux）
+- 或在 IDEA 等编辑器的侧边栏点击「Multi-Project Creator」图标
+
+在项目列表中可：
+- 打开项目
+- 刷新项目
+- 删除项目（仅删除记录或同时删除文件）
+
+## 清空表单
+
+点击「清空表单」按钮可重置所有输入内容。
+
+## 注意事项
+
+- 请确保已正确安装 Git 并配置好环境变量
+- 选择的 IDE 需已在本地安装
+- 分支名要求符合 Git 分支命名规范

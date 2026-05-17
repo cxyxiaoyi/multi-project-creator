@@ -1,0 +1,86 @@
+{
+  "name": "multi-project-creator",
+  "displayName": "Multi-Project Creator",
+  "description": "Create multiple workspaces based on different git branches for the same project",
+  "version": "1.0.0",
+  "publisher": "your-publisher-name",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "multiProjectCreator.createProject",
+        "title": "Multi-Project Creator: Create Project",
+        "category": "Multi-Project Creator"
+      },
+      {
+        "command": "multiProjectCreator.listProjects",
+        "title": "Multi-Project Creator: List Projects",
+        "category": "Multi-Project Creator"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "multiProjectCreator",
+          "title": "Multi-Project Creator",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "multiProjectCreator": [
+        {
+          "id": "projectExplorer",
+          "name": "Projects"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "multiProjectCreator.createProject",
+        "key": "ctrl+alt+w",
+        "mac": "cmd+control+w"
+      },
+      {
+        "command": "multiProjectCreator.listProjects",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+control+l"
+      }
+    ],
+    "configuration": {
+      "title": "Multi-Project Creator",
+      "properties": {
+        "multiProjectCreator.defaultWorkspace": {
+          "type": "string",
+          "default": "",
+          "description": "Default workspace directory for new projects"
+        },
+        "multiProjectCreator.savedProjects": {
+          "type": "array",
+          "default": [],
+          "description": "Saved project configurations"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {}
+}
