@@ -39,6 +39,7 @@ const path = __importStar(require("path"));
 const child_process_1 = require("child_process");
 const util_1 = require("util");
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
+const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
 class GitService {
     static async ensureDirectoryExists(dirPath) {
         try {
@@ -176,13 +177,159 @@ class GitService {
             return { success: false, message: 'Failed to pull', error: errorMessage };
         }
     }
-    static async getCurrentBranch(repoPath) {
+    /** 通过 git 命令解析真实 git 目录（兼容 submodule、worktree） */
+    static async resolveGitDir(repoPath) {
         try {
-            const { stdout } = await execAsync('git branch --show-current', { cwd: repoPath });
+            const gitDir = await this.runGitCommand(repoPath, ['rev-parse', '--git-dir']);
+            if (!gitDir) {
+                return null;
+            }
+            return path.isAbsolute(gitDir) ? gitDir : path.resolve(repoPath, gitDir);
+        }
+        catch {
+            return null;
+        }
+    }
+    static readBranchFromHeadFile(gitDir) {
+        try {
+            const headFile = path.join(gitDir, 'HEAD');
+            if (!fs.existsSync(headFile)) {
+                return '';
+            }
+            const head = fs.readFileSync(headFile, 'utf-8').trim();
+            if (head.startsWith('ref: refs/heads/')) {
+                return head.replace('ref: refs/heads/', '');
+            }
+        }
+        catch (error) {
+            console.error('Error reading HEAD file:', error);
+        }
+        return '';
+    }
+    static normalizeBranchName(name) {
+        const trimmed = name.trim();
+        if (trimmed.startsWith('refs/heads/')) {
+            return trimmed.replace('refs/heads/', '');
+        }
+        if (trimmed.startsWith('origin/')) {
+            return trimmed.slice('origin/'.length);
+        }
+        return trimmed;
+    }
+    static async runGitCommand(repoPath, args) {
+        const { stdout } = await execFileAsync('git', args, {
+            cwd: repoPath,
+            maxBuffer: 1024 * 1024,
+            env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+        });
+        return (stdout ?? '').toString().replace(/\r/g, '').trim();
+    }
+    static async getGitRoot(repoPath) {
+        try {
+            return await this.runGitCommand(repoPath, ['rev-parse', '--show-toplevel']);
+        }
+        catch {
+            return repoPath;
+        }
+    }
+    static async getCurrentBranch(repoPath) {
+        let gitRoot;
+        try {
+            gitRoot = await this.getGitRoot(repoPath);
+        }
+        catch {
+            return '';
+        }
+        const gitDir = await this.resolveGitDir(gitRoot);
+        if (gitDir) {
+            const fromHead = this.readBranchFromHeadFile(gitDir);
+            if (fromHead) {
+                return fromHead;
+            }
+        }
+        try {
+            const output = await this.runGitCommand(gitRoot, [
+                'branch',
+                '--list',
+                '--format=%(HEAD):%(refname:short)'
+            ]);
+            for (const line of output.split('\n')) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('true:')) {
+                    const branch = trimmed.slice(5).trim();
+                    if (branch) {
+                        return branch;
+                    }
+                }
+            }
+        }
+        catch {
+            // fall through
+        }
+        try {
+            const branch = await this.runGitCommand(gitRoot, ['symbolic-ref', '-q', '--short', 'HEAD']);
+            if (branch) {
+                return branch;
+            }
+        }
+        catch {
+            // fall through
+        }
+        try {
+            const branch = await this.runGitCommand(gitRoot, ['branch', '--show-current']);
+            if (branch) {
+                return branch;
+            }
+        }
+        catch {
+            // fall through
+        }
+        try {
+            const abbreviated = await this.runGitCommand(gitRoot, ['rev-parse', '--abbrev-ref', 'HEAD']);
+            if (abbreviated && abbreviated !== 'HEAD') {
+                return this.normalizeBranchName(abbreviated);
+            }
+        }
+        catch {
+            // fall through
+        }
+        try {
+            const sha = await this.runGitCommand(gitRoot, ['rev-parse', '--short', 'HEAD']);
+            try {
+                const describe = await this.runGitCommand(gitRoot, [
+                    'describe',
+                    '--tags',
+                    '--always',
+                    '--exact-match'
+                ]);
+                if (describe) {
+                    return `detached@${describe}`;
+                }
+            }
+            catch {
+                // fall through
+            }
+            return sha ? `detached@${sha}` : '(游离 HEAD)';
+        }
+        catch {
+            return '';
+        }
+    }
+    static async getRemoteUrl(repoPath) {
+        try {
+            const { stdout } = await execAsync('git remote get-url origin', { cwd: repoPath });
             return stdout.trim();
         }
         catch (error) {
             return '';
+        }
+    }
+    static isGitRepository(dirPath) {
+        try {
+            return fs.existsSync(path.join(dirPath, '.git'));
+        }
+        catch (error) {
+            return false;
         }
     }
 }

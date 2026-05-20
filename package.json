@@ -1,15 +1,32 @@
 {
   "name": "multi-project-creator",
   "displayName": "Multi-Project Creator",
-  "description": "Create multiple workspaces based on different git branches for the same project",
-  "version": "1.0.0",
-  "publisher": "your-publisher-name",
+  "description": "创建多个基于不同 Git 分支的工作区，支持工程模板管理",
+  "version": "1.3.0",
+  "publisher": "caixy123",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
     "Other"
   ],
+  "keywords": [
+    "git",
+    "workspace",
+    "project",
+    "branch",
+    "multi-project",
+    "clone"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cxyxiaoyi/multi-project-creator"
+  },
+  "homepage": "https://github.com/cxyxiaoyi/multi-project-creator#readme",
+  "bugs": {
+    "url": "https://github.com/cxyxiaoyi/multi-project-creator/issues"
+  },
+  "license": "MIT",
   "activationEvents": [
     "onStartupFinished"
   ],

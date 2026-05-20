@@ -1,4 +1,10 @@
-.git/
-node_modules/
-src/
+.git
+.gitignore
+.vscode
+.vscodeignore
+node_modules
+src
 *.map
+tsconfig.json
+*.vsix
+.DS_Store

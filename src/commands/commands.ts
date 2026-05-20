@@ -1,11 +1,41 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { ProjectService } from '../services/projectService';
 import { ProjectTreeDataProvider } from '../views/projectTreeDataProvider';
 import { ProjectTemplateService, ProjectTemplate } from '../services/projectTemplateService';
 import { FormData, IDEType } from '../models/types';
+import { IDEService } from '../services/ideService';
+import { GitService } from '../services/gitService';
 
 let formView: FormView | undefined;
 let projectTreeDataProvider: ProjectTreeDataProvider | undefined;
+
+/** 当前 IDE 打开的工作区根目录，用于「管理已有需求」默认路径 */
+function getDefaultWorkspaceRoot(): string {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) {
+    return '';
+  }
+
+  if (folders.length === 1) {
+    return folders[0].uri.fsPath;
+  }
+
+  // 多根工作区：优先使用 .code-workspace 文件所在目录（通常为各需求文件夹的父目录）
+  const workspaceFile = vscode.workspace.workspaceFile;
+  if (workspaceFile) {
+    return path.dirname(workspaceFile.fsPath);
+  }
+
+  return folders[0].uri.fsPath;
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
 
 export class FormView {
   private panel: vscode.WebviewPanel | undefined;
@@ -16,8 +46,16 @@ export class FormView {
   }
 
   async show(): Promise<void> {
+    const defaultWorkspaceRoot = getDefaultWorkspaceRoot();
+
     if (this.panel) {
       this.panel.reveal(vscode.ViewColumn.One);
+      if (defaultWorkspaceRoot) {
+        this.panel.webview.postMessage({
+          type: 'setDefaultWorkspaceRoot',
+          path: defaultWorkspaceRoot
+        });
+      }
       return;
     }
 
@@ -31,10 +69,9 @@ export class FormView {
       }
     );
 
-    // Get saved templates
     const templates = ProjectTemplateService.getTemplates();
 
-    this.panel.webview.html = this.getWebviewContent(templates);
+    this.panel.webview.html = this.getWebviewContent(templates, defaultWorkspaceRoot);
 
     this.panel.webview.onDidReceiveMessage(async (message) => {
       await this.handleMessage(message);
@@ -45,7 +82,11 @@ export class FormView {
     });
   }
 
-  private getWebviewContent(templates: ProjectTemplate[]): string {
+  private getWebviewContent(templates: ProjectTemplate[], defaultWorkspaceRoot: string = ''): string {
+    const defaultRootAttr = defaultWorkspaceRoot
+      ? ` value="${escapeHtmlAttribute(defaultWorkspaceRoot)}"`
+      : '';
+
     const templateOptions = templates.length > 0
       ? templates.map(t => `<option value="${t.gitUrl}">${t.name}</option>`).join('')
       : '<option value="">暂无保存的工程</option>';
@@ -361,12 +402,94 @@ export class FormView {
     .editing-row input {
       background-color: var(--vscode-input-background);
     }
+
+    .mode-section {
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--vscode-input-border);
+    }
+
+    .mode-options {
+      display: flex;
+      gap: 24px;
+      padding: 12px;
+      border: 1px solid var(--vscode-input-border);
+      border-radius: 4px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      margin-bottom: 16px;
+      color: var(--vscode-foreground);
+    }
+
+    .info-box {
+      padding: 12px;
+      background-color: var(--vscode-editorWidget-background);
+      border: 1px solid var(--vscode-input-border);
+      border-radius: 4px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .info-box .info-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .info-box .info-label {
+      font-weight: 600;
+      min-width: 72px;
+    }
+
+    .readonly-text {
+      color: var(--vscode-descriptionForeground);
+      word-break: break-all;
+    }
+
+    #managePanel {
+      display: none;
+    }
+
+    .repo-list-empty {
+      text-align: center;
+      color: var(--vscode-descriptionForeground);
+      padding: 16px;
+    }
+
+    .branch-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .branch-cell .repo-branch-text {
+      flex: 1;
+      word-break: break-all;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <!-- Main Form -->
-    <h2>创建工作区</h2>
+    <h2>多工作区创建工具</h2>
+
+    <div class="mode-section">
+      <label>操作模式</label>
+      <div class="mode-options">
+        <div class="ide-option">
+          <input type="radio" name="workMode" value="create" id="mode-create" checked>
+          <label for="mode-create">新建需求工作区</label>
+        </div>
+        <div class="ide-option">
+          <input type="radio" name="workMode" value="manage" id="mode-manage">
+          <label for="mode-manage">管理已有需求</label>
+        </div>
+      </div>
+    </div>
+
+    <div id="createPanel">
+    <h3 class="section-title">创建工作区</h3>
 
     <!-- Project Template Button -->
     <div class="form-group">
@@ -461,6 +584,114 @@ export class FormView {
       <button class="btn" id="createWorkspace">创建工作区</button>
       <button class="btn btn-secondary" id="clearForm">清空表单</button>
     </div>
+    </div>
+
+    <div id="managePanel">
+      <h3 class="section-title">管理已有需求</h3>
+
+      <div class="form-group">
+        <label for="manageWorkspaceRoot">工作区根目录:</label>
+        <div class="input-row">
+          <input type="text" id="manageWorkspaceRoot" placeholder="/Users/yourname/workspace"${defaultRootAttr}>
+          <button class="btn" id="browseManagePath">浏览...</button>
+          <button class="btn btn-secondary" id="refreshWorkspace">刷新</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="requirementSelect">需求列表:</label>
+        <select id="requirementSelect">
+          <option value="">-- 请先扫描工作区 --</option>
+        </select>
+      </div>
+
+      <div id="requirementInfo" class="info-box" style="display: none;">
+        <div class="info-row">
+          <span class="info-label">需求名称:</span>
+          <span id="manageReqName" class="readonly-text"></span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">需求路径:</span>
+          <span id="manageReqPath" class="readonly-text"></span>
+        </div>
+      </div>
+
+      <div class="repo-section">
+        <label>已有工程列表</label>
+        <table class="repo-table" id="existingRepoTable">
+          <thead>
+            <tr>
+              <th style="width: 18%;">工程名</th>
+              <th style="width: 42%;">Git URL</th>
+              <th style="width: 28%;">分支</th>
+              <th style="width: 12%;" class="actions">操作</th>
+            </tr>
+          </thead>
+          <tbody id="existingRepoBody">
+            <tr><td colspan="4" class="repo-list-empty">请选择需求以查看已有工程</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="repo-section">
+        <label>添加新工程</label>
+        <table class="repo-table" id="appendRepoTable">
+          <thead>
+            <tr>
+              <th style="width: 40%;">选择工程</th>
+              <th style="width: 40%;">分支名</th>
+              <th style="width: 20%;" class="actions">操作</th>
+            </tr>
+          </thead>
+          <tbody id="appendRepoBody">
+            <tr>
+              <td>
+                <select class="append-template-select">
+                  <option value="">-- 选择工程 --</option>
+                  ${templateOptions}
+                </select>
+              </td>
+              <td><input type="text" class="append-branch" placeholder="main" value="main"></td>
+              <td class="actions">
+                <button class="btn btn-sm btn-danger delete-append-repo">删除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <button class="btn btn-secondary add-repo-btn" id="addAppendRepo">+ 添加工程</button>
+      </div>
+
+      <div class="ide-section">
+        <label>目标 IDE</label>
+        <div class="ide-options">
+          <div class="ide-option">
+            <input type="radio" id="manage-ide-vscode" name="manageIde" value="VSCode" checked>
+            <label for="manage-ide-vscode">VSCode</label>
+          </div>
+          <div class="ide-option">
+            <input type="radio" id="manage-ide-cursor" name="manageIde" value="Cursor">
+            <label for="manage-ide-cursor">Cursor</label>
+          </div>
+          <div class="ide-option">
+            <input type="radio" id="manage-ide-qoder" name="manageIde" value="Qoder">
+            <label for="manage-ide-qoder">Qoder</label>
+          </div>
+          <div class="ide-option">
+            <input type="radio" id="manage-ide-kiro" name="manageIde" value="Kiro">
+            <label for="manage-ide-kiro">Kiro</label>
+          </div>
+          <div class="ide-option">
+            <input type="radio" id="manage-ide-idea" name="manageIde" value="IDEA">
+            <label for="manage-ide-idea">IDEA</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="button-group">
+        <button class="btn" id="appendRepos">追加工程</button>
+        <button class="btn btn-secondary" id="openInIDE">在 IDE 中打开</button>
+      </div>
+    </div>
 
     <!-- Log Area -->
     <div class="log-section">
@@ -504,6 +735,8 @@ export class FormView {
   <script>
     const vscode = acquireVsCodeApi();
     let editingId = null;
+    let cachedTemplates = [];
+    let selectedRequirementPath = '';
 
     function log(message, type = 'info') {
       const logArea = document.getElementById('logArea');
@@ -554,12 +787,97 @@ export class FormView {
         </tr>
       \`).join('');
 
-      // Update select options in main form
+      cachedTemplates = templates;
+
       const select = document.getElementById('projectSelect');
       const currentValue = select.value;
       select.innerHTML = '<option value="">-- 选择已保存的工程 --</option>' +
         templates.map(t => \`<option value="\${t.gitUrl}">\${t.name}</option>\`).join('');
       select.value = currentValue;
+
+      updateAppendTemplateSelects(templates);
+    }
+
+    function updateAppendTemplateSelects(templates) {
+      const optionsHtml = '<option value="">-- 选择工程 --</option>' +
+        templates.map(t => \`<option value="\${t.gitUrl}">\${t.name}</option>\`).join('');
+      document.querySelectorAll('.append-template-select').forEach(sel => {
+        const current = sel.value;
+        sel.innerHTML = optionsHtml;
+        sel.value = current;
+      });
+    }
+
+    function createAppendRowHtml() {
+      const options = '<option value="">-- 选择工程 --</option>' +
+        cachedTemplates.map(t => \`<option value="\${t.gitUrl}">\${t.name}</option>\`).join('');
+      return \`
+        <tr>
+          <td><select class="append-template-select">\${options}</select></td>
+          <td><input type="text" class="append-branch" placeholder="main" value="main"></td>
+          <td class="actions">
+            <button class="btn btn-sm btn-danger delete-append-repo">删除</button>
+          </td>
+        </tr>
+      \`;
+    }
+
+    function switchWorkMode(mode) {
+      const isManage = mode === 'manage';
+      document.getElementById('createPanel').style.display = isManage ? 'none' : 'block';
+      document.getElementById('managePanel').style.display = isManage ? 'block' : 'none';
+    }
+
+    function scanWorkspace() {
+      const root = document.getElementById('manageWorkspaceRoot').value.trim();
+      if (!root) {
+        log('请输入工作区根目录', 'error');
+        return;
+      }
+      clearLogs();
+      log('正在扫描工作区...', 'progress');
+      vscode.postMessage({ type: 'scanWorkspace', workspacePath: root });
+    }
+
+    function renderRequirements(requirements) {
+      const select = document.getElementById('requirementSelect');
+      selectedRequirementPath = '';
+      document.getElementById('requirementInfo').style.display = 'none';
+      renderExistingRepos([]);
+
+      if (!requirements || requirements.length === 0) {
+        select.innerHTML = '<option value="">-- 未找到需求文件夹 --</option>';
+        return;
+      }
+
+      select.innerHTML = '<option value="">-- 选择需求 --</option>' +
+        requirements.map(r => \`<option value="\${r.path}">\${r.name}</option>\`).join('');
+    }
+
+    function escapeAttr(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;');
+    }
+
+    function renderExistingRepos(repositories) {
+      const tbody = document.getElementById('existingRepoBody');
+      if (!repositories || repositories.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="repo-list-empty">该需求下暂无 Git 工程</td></tr>';
+        return;
+      }
+      tbody.innerHTML = repositories.map(r => \`
+        <tr data-repo-path="\${escapeAttr(r.path)}">
+          <td>\${r.name}</td>
+          <td>\${r.gitUrl}</td>
+          <td class="branch-cell">
+            <span class="repo-branch-text">\${r.branch}</span>
+            <button class="btn btn-sm btn-secondary refresh-repo-branch" data-path="\${escapeAttr(r.path)}" title="刷新分支">↻</button>
+          </td>
+          <td class="actions"></td>
+        </tr>
+      \`).join('');
     }
 
     function editTemplate(id) {
@@ -650,9 +968,95 @@ export class FormView {
       }
     });
 
+    // Mode switch
+    document.querySelectorAll('input[name="workMode"]').forEach(radio => {
+      radio.addEventListener('change', (e) => switchWorkMode(e.target.value));
+    });
+
+    // Manage mode: workspace scan
+    document.getElementById('browseManagePath').addEventListener('click', () => {
+      vscode.postMessage({ type: 'browseDirectory', target: 'manage' });
+    });
+    document.getElementById('refreshWorkspace').addEventListener('click', scanWorkspace);
+
+    document.getElementById('existingRepoTable').addEventListener('click', (e) => {
+      const btn = e.target.closest('.refresh-repo-branch');
+      if (!btn) return;
+      const repoPath = btn.getAttribute('data-path');
+      if (!repoPath) return;
+      log(\`正在刷新分支: \${repoPath}\`, 'progress');
+      vscode.postMessage({ type: 'refreshRepoBranch', repoPath });
+    });
+
+    document.getElementById('requirementSelect').addEventListener('change', (e) => {
+      const reqPath = e.target.value;
+      selectedRequirementPath = reqPath;
+      if (!reqPath) {
+        document.getElementById('requirementInfo').style.display = 'none';
+        renderExistingRepos([]);
+        return;
+      }
+      log('正在扫描需求目录...', 'progress');
+      vscode.postMessage({ type: 'scanRequirement', requirementPath: reqPath });
+    });
+
+    document.getElementById('addAppendRepo').addEventListener('click', () => {
+      document.getElementById('appendRepoBody').insertAdjacentHTML('beforeend', createAppendRowHtml());
+    });
+
+    document.getElementById('appendRepoTable').addEventListener('click', (e) => {
+      if (e.target.classList.contains('delete-append-repo')) {
+        const row = e.target.closest('tr');
+        const count = document.querySelectorAll('#appendRepoBody tr').length;
+        if (count > 1) {
+          row.remove();
+        } else {
+          log('至少保留一个工程行', 'error');
+        }
+      }
+    });
+
+    document.getElementById('appendRepos').addEventListener('click', () => {
+      if (!selectedRequirementPath) {
+        log('请先选择需求', 'error');
+        return;
+      }
+      const repositories = [];
+      document.querySelectorAll('#appendRepoBody tr').forEach(row => {
+        const gitUrl = row.querySelector('.append-template-select')?.value.trim();
+        const branch = row.querySelector('.append-branch')?.value.trim() || 'main';
+        if (gitUrl) {
+          repositories.push({ gitUrl, branch });
+        }
+      });
+      if (repositories.length === 0) {
+        log('请至少选择一个要追加的工程', 'error');
+        return;
+      }
+      clearLogs();
+      log('开始追加工程...', 'progress');
+      vscode.postMessage({
+        type: 'appendRepositoriesToPath',
+        path: selectedRequirementPath,
+        repositories
+      });
+    });
+
+    document.getElementById('openInIDE').addEventListener('click', () => {
+      if (!selectedRequirementPath) {
+        log('请先选择需求', 'error');
+        return;
+      }
+      const ide = document.querySelector('input[name="manageIde"]:checked')?.value || 'VSCode';
+      vscode.postMessage({
+        type: 'openInIDE',
+        data: { path: selectedRequirementPath, ide }
+      });
+    });
+
     // Browse Directory
     document.getElementById('browsePath').addEventListener('click', () => {
-      vscode.postMessage({ type: 'browseDirectory' });
+      vscode.postMessage({ type: 'browseDirectory', target: 'create' });
     });
 
     // Use Template
@@ -752,8 +1156,60 @@ export class FormView {
         log(message.message, message.logType || 'info');
       }
 
+      if (message.type === 'setDefaultWorkspaceRoot' && message.path) {
+        const el = document.getElementById('manageWorkspaceRoot');
+        if (!el.value.trim()) {
+          el.value = message.path;
+        }
+      }
+
       if (message.type === 'setDirectory') {
-        document.getElementById('workspacePath').value = message.path;
+        if (message.target === 'manage') {
+          document.getElementById('manageWorkspaceRoot').value = message.path;
+          scanWorkspace();
+        } else {
+          document.getElementById('workspacePath').value = message.path;
+        }
+      }
+
+      if (message.type === 'workspaceScanned') {
+        renderRequirements(message.requirements);
+        log(\`扫描完成，找到 \${message.requirements?.length || 0} 个需求\`, 'success');
+      }
+
+      if (message.type === 'requirementScanned') {
+        const req = message.requirement;
+        selectedRequirementPath = req.path;
+        document.getElementById('manageReqName').textContent = req.name;
+        document.getElementById('manageReqPath').textContent = req.path;
+        document.getElementById('requirementInfo').style.display = 'block';
+        renderExistingRepos(req.repositories);
+        log(\`已加载需求「\${req.name}」，共 \${req.repositories?.length || 0} 个工程\`, 'success');
+      }
+
+      if (message.type === 'repoBranchRefreshed') {
+        const rows = document.querySelectorAll('#existingRepoBody tr[data-repo-path]');
+        for (const row of rows) {
+          if (row.getAttribute('data-repo-path') === message.repoPath) {
+            const branchEl = row.querySelector('.repo-branch-text');
+            if (branchEl) {
+              branchEl.textContent = message.branch;
+            }
+            const cells = row.querySelectorAll('td');
+            if (cells[1] && message.gitUrl) {
+              cells[1].textContent = message.gitUrl;
+            }
+            break;
+          }
+        }
+        log(\`已刷新分支: \${message.branch}\`, 'success');
+      }
+
+      if (message.type === 'appendComplete') {
+        log(message.message || '追加完成', message.logType || 'success');
+        if (selectedRequirementPath) {
+          vscode.postMessage({ type: 'scanRequirement', requirementPath: selectedRequirementPath });
+        }
       }
 
       if (message.type === 'templates') {
@@ -786,7 +1242,7 @@ export class FormView {
 
   private async handleMessage(message: any): Promise<void> {
     switch (message.type) {
-      case 'browseDirectory':
+      case 'browseDirectory': {
         const selectedUri = await vscode.window.showOpenDialog({
           canSelectFiles: false,
           canSelectFolders: true,
@@ -797,9 +1253,50 @@ export class FormView {
         if (selectedUri && selectedUri[0]) {
           this.panel?.webview.postMessage({
             type: 'setDirectory',
-            path: selectedUri[0].fsPath
+            path: selectedUri[0].fsPath,
+            target: message.target || 'create'
           });
         }
+        break;
+      }
+
+      case 'scanWorkspace': {
+        const requirements = await ProjectService.scanWorkspace(message.workspacePath);
+        this.panel?.webview.postMessage({
+          type: 'workspaceScanned',
+          requirements
+        });
+        break;
+      }
+
+      case 'scanRequirement': {
+        const requirement = await ProjectService.scanRequirement(message.requirementPath);
+        this.panel?.webview.postMessage({
+          type: 'requirementScanned',
+          requirement
+        });
+        break;
+      }
+
+      case 'refreshRepoBranch': {
+        const repoPath = message.repoPath as string;
+        const branch = await GitService.getCurrentBranch(repoPath);
+        const gitUrl = await GitService.getRemoteUrl(repoPath);
+        this.panel?.webview.postMessage({
+          type: 'repoBranchRefreshed',
+          repoPath,
+          branch: branch || '(未知分支)',
+          gitUrl: gitUrl || '(无远程地址)'
+        });
+        break;
+      }
+
+      case 'appendRepositoriesToPath':
+        await this.handleAppendRepositories(message.path, message.repositories);
+        break;
+
+      case 'openInIDE':
+        await this.handleOpenInIDE(message.data.path, message.data.ide as IDEType);
         break;
 
       case 'getTemplates':
@@ -870,6 +1367,76 @@ export class FormView {
       case 'createProject':
         await this.handleCreateProject(message.data);
         break;
+    }
+  }
+
+  private async handleAppendRepositories(
+    requirementPath: string,
+    repositories: Array<{ gitUrl: string; branch: string }>
+  ): Promise<void> {
+    try {
+      const result = await ProjectService.appendRepositoriesToPath(
+        requirementPath,
+        repositories,
+        (msg) => {
+          this.panel?.webview.postMessage({
+            type: 'log',
+            message: msg,
+            logType: 'progress'
+          });
+        }
+      );
+
+      if (result.success) {
+        this.panel?.webview.postMessage({
+          type: 'appendComplete',
+          message: result.message || '工程追加成功',
+          logType: 'success'
+        });
+      } else {
+        this.panel?.webview.postMessage({
+          type: 'log',
+          message: result.error || '追加失败',
+          logType: 'error'
+        });
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      this.panel?.webview.postMessage({
+        type: 'log',
+        message: errorMessage,
+        logType: 'error'
+      });
+    }
+  }
+
+  private async handleOpenInIDE(requirementPath: string, ide: IDEType): Promise<void> {
+    try {
+      const isInstalled = await IDEService.checkAndNotifyIDE(ide);
+      if (!isInstalled) {
+        this.panel?.webview.postMessage({
+          type: 'log',
+          message: `${ide} 未安装，无法打开`,
+          logType: 'error'
+        });
+        return;
+      }
+
+      const result = await IDEService.launchIDE(ide, requirementPath);
+      this.panel?.webview.postMessage({
+        type: 'log',
+        message: result
+          ? `已在 ${ide} 中打开: ${requirementPath}`
+          : `打开失败: ${requirementPath}`,
+        logType: result ? 'success' : 'error'
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      this.panel?.webview.postMessage({
+        type: 'log',
+        message: errorMessage,
+        logType: 'error'
+      });
     }
   }
 

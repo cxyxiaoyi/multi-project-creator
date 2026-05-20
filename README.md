@@ -10,20 +10,32 @@
 - 💻 支持多种 IDE 自动打开（VSCode、Cursor、Qoder、Kiro、IDEA）
 - 📝 实时执行日志显示
 - 🎨 简洁美观的弹窗式界面
+- ➕ 支持在已有需求工作区中追加新工程
 
-## 快捷键
+## 快捷键设置
 
-| 功能 | Mac | Windows/Linux |
-|------|-----|--------------|
-| 创建工作区 | `Cmd + Control + W` | `Ctrl + Alt + W` |
-| 查看项目列表 | `Cmd + Control + L` | `Ctrl + Alt + L` |
+插件支持快捷键快速访问，你可以根据个人习惯设置喜欢的快捷键。
+
+### 设置方法
+
+1. 打开 VSCode/Cursor 的键盘快捷方式设置：
+   - Mac: `Cmd + Shift + P` → 输入 "键盘快捷方式"
+   - Windows/Linux: `Ctrl + Shift + P` → 输入 "键盘快捷方式"
+
+2. 搜索以下命令并设置快捷键：
+   - **创建工作区**：`Multi-Project Creator: Create Project`
+   - **查看项目列表**：`Multi-Project Creator: List Projects`
+
+3. 推荐快捷键（可自定义）：
+   - Mac: `Cmd + Control + W`（创建工作区）、`Cmd + Control + L`（查看列表）
+   - Windows/Linux: `Ctrl + Alt + W`（创建工作区）、`Ctrl + Alt + L`（查看列表）
 
 ## 使用方法
 
 ### 1. 打开创建界面
 
-- 使用快捷键 `Cmd + Control + W`（Mac）或 `Ctrl + Alt + W`（Windows/Linux）
-- 或通过命令面板输入「Multi-Project Creator: Create Project」
+- 通过命令面板输入「Multi-Project Creator: Create Project」或设置的快捷键
+- 在 IDEA 等支持侧边栏图标的编辑器中点击「Multi-Project Creator」图标
 
 ### 2. 维护工程列表（可选）
 
@@ -57,7 +69,15 @@
 3. 切换到指定分支（如不存在则新建）
 4. 使用选中的 IDE 打开工作区
 
-### 5. 查看项目列表
+### 5. 追加工程到已有需求
+
+选择「追加工程到已有需求」模式：
+- 从下拉框选择已有需求工作区
+- 查看该需求的信息和已有工程列表
+- 在「添加新工程」区域添加要追加的工程
+- 点击「追加工程」完成添加
+
+### 6. 查看项目列表
 
 - 使用快捷键 `Cmd + Control + L`（Mac）或 `Ctrl + Alt + L`（Windows/Linux）
 - 或在 IDEA 等编辑器的侧边栏点击「Multi-Project Creator」图标

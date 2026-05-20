@@ -267,6 +267,141 @@ export class ProjectService {
       return { success: true, message: `Project removed from list: ${project.name}` };
     }
   }
+
+  static async scanWorkspace(workspacePath: string): Promise<RequirementFolder[]> {
+    const requirements: RequirementFolder[] = [];
+    
+    try {
+      if (!fs.existsSync(workspacePath)) {
+        return requirements;
+      }
+
+      const items = fs.readdirSync(workspacePath);
+      
+      for (const item of items) {
+        const itemPath = path.join(workspacePath, item);
+        const stat = fs.statSync(itemPath);
+        
+        if (stat.isDirectory() && !item.startsWith('.')) {
+          requirements.push({
+            name: item,
+            path: itemPath
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error scanning workspace:', error);
+    }
+    
+    return requirements;
+  }
+
+  static async scanRequirement(requirementPath: string): Promise<ScannedRequirement> {
+    const name = path.basename(requirementPath);
+    const repositories: ScannedRepository[] = [];
+    
+    try {
+      if (!fs.existsSync(requirementPath)) {
+        return { name, path: requirementPath, repositories: [] };
+      }
+
+      const items = fs.readdirSync(requirementPath);
+      
+      for (const item of items) {
+        const itemPath = path.join(requirementPath, item);
+        const stat = fs.statSync(itemPath);
+        
+        if (stat.isDirectory() && !item.startsWith('.')) {
+          if (GitService.isGitRepository(itemPath)) {
+            const gitUrl = await GitService.getRemoteUrl(itemPath);
+            const branch = await GitService.getCurrentBranch(itemPath);
+            
+            repositories.push({
+              name: item,
+              path: itemPath,
+              gitUrl: gitUrl || '(无远程地址)',
+              branch: branch || '(未知分支)'
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error scanning requirement:', error);
+    }
+    
+    const configPath = path.join(requirementPath, '.vscode', 'multi-project.json');
+    let config;
+    
+    try {
+      if (fs.existsSync(configPath)) {
+        const configContent = fs.readFileSync(configPath, 'utf-8');
+        config = JSON.parse(configContent);
+      }
+    } catch (error) {
+      console.error('Error reading config:', error);
+    }
+    
+    return { name, path: requirementPath, repositories, config };
+  }
+
+  static async saveRequirementConfig(requirementPath: string, config: any): Promise<void> {
+    try {
+      const vscodeDir = path.join(requirementPath, '.vscode');
+      if (!fs.existsSync(vscodeDir)) {
+        fs.mkdirSync(vscodeDir, { recursive: true });
+      }
+      
+      const configPath = path.join(vscodeDir, 'multi-project.json');
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+    } catch (error) {
+      console.error('Error saving config:', error);
+    }
+  }
+
+  static async appendRepositoriesToPath(
+    requirementPath: string,
+    newRepositories: Array<{ gitUrl: string; branch: string }>,
+    onProgress?: (message: string, progress?: number) => void
+  ): Promise<{ success: boolean; error?: string; message?: string }> {
+    try {
+      onProgress?.('开始追加工程...', 5);
+
+      for (let i = 0; i < newRepositories.length; i++) {
+        const { gitUrl, branch } = newRepositories[i];
+        const repoName = GitService.extractRepoName(gitUrl);
+        
+        const baseProgress = 10 + (i / newRepositories.length) * 80;
+        
+        onProgress?.(`正在克隆 ${repoName}...`, baseProgress);
+        
+        const cloneResult = await GitService.cloneRepository(
+          gitUrl,
+          requirementPath,
+          branch,
+          (message) => {
+            onProgress?.(message, baseProgress);
+          }
+        );
+        
+        if (!cloneResult.success) {
+          return { success: false, error: `Failed to clone ${repoName}: ${cloneResult.error}` };
+        }
+        
+        onProgress?.(`${repoName} 克隆成功`, baseProgress + 5);
+      }
+      
+      onProgress?.('所有工程追加成功！', 100);
+      
+      return { 
+        success: true, 
+        message: `成功追加 ${newRepositories.length} 个工程`
+      };
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      return { success: false, error: errorMessage };
+    }
+  }
 }
 
 export interface ProjectResult {
@@ -275,4 +410,23 @@ export interface ProjectResult {
   message?: string;
   warning?: string;
   error?: string;
+}
+
+export interface RequirementFolder {
+  name: string;
+  path: string;
+}
+
+export interface ScannedRepository {
+  name: string;
+  path: string;
+  gitUrl: string;
+  branch: string;
+}
+
+export interface ScannedRequirement {
+  name: string;
+  path: string;
+  repositories: ScannedRepository[];
+  config?: any;
 }
