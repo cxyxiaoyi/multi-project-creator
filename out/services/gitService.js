@@ -141,17 +141,21 @@ class GitService {
     }
     static async getRemoteBranches(gitUrl) {
         try {
-            const { stdout } = await execAsync(`git ls-remote --heads ${gitUrl}`, { timeout: 10000 });
-            const branches = [];
+            const { stdout } = await execAsync(`git ls-remote --heads ${gitUrl}`, {
+                timeout: 30000,
+                maxBuffer: 1024 * 1024
+            });
+            const branches = new Set();
             stdout.split('\n').forEach(line => {
                 const match = line.match(/refs\/heads\/(.+)$/);
                 if (match) {
-                    branches.push(match[1]);
+                    branches.add(match[1]);
                 }
             });
-            return branches;
+            return Array.from(branches);
         }
         catch (error) {
+            console.error('Failed to fetch remote branches:', error);
             return [];
         }
     }

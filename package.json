@@ -1,8 +1,8 @@
 {
   "name": "multi-project-creator",
   "displayName": "Multi-Project Creator",
-  "description": "创建多个基于不同 Git 分支的工作区，支持工程模板管理",
-  "version": "1.3.0",
+  "description": "创建多个基于不同 Git 分支的工作区，支持工程模板管理与基于文件系统扫描的已有需求管理",
+  "version": "1.4.0",
   "publisher": "caixy123",
   "engines": {
     "vscode": "^1.85.0"

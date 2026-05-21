@@ -468,6 +468,11 @@ export class FormView {
       flex: 1;
       word-break: break-all;
     }
+
+    .branch-cell-container select,
+    .branch-cell-container input {
+      width: 100%;
+    }
   </style>
 </head>
 <body>
@@ -542,7 +547,9 @@ export class FormView {
         <tbody id="repoBody">
           <tr>
             <td><input type="text" class="repo-url" placeholder="https://github.com/username/repo.git"></td>
-            <td><input type="text" class="repo-branch" placeholder="main" value="main"></td>
+            <td class="branch-cell-container">
+              <input type="text" class="repo-branch" placeholder="main" value="main">
+            </td>
             <td class="actions">
               <button class="btn btn-sm btn-danger delete-repo">删除</button>
             </td>
@@ -651,7 +658,9 @@ export class FormView {
                   ${templateOptions}
                 </select>
               </td>
-              <td><input type="text" class="append-branch" placeholder="main" value="main"></td>
+              <td class="branch-cell-container">
+                <input type="text" class="append-branch" placeholder="main" value="main">
+              </td>
               <td class="actions">
                 <button class="btn btn-sm btn-danger delete-append-repo">删除</button>
               </td>
@@ -737,6 +746,7 @@ export class FormView {
     let editingId = null;
     let cachedTemplates = [];
     let selectedRequirementPath = '';
+    let branchRequestCounter = 0;
 
     function log(message, type = 'info') {
       const logArea = document.getElementById('logArea');
@@ -814,12 +824,64 @@ export class FormView {
       return \`
         <tr>
           <td><select class="append-template-select">\${options}</select></td>
-          <td><input type="text" class="append-branch" placeholder="main" value="main"></td>
+          <td class="branch-cell-container">
+            <input type="text" class="append-branch" placeholder="main" value="main">
+          </td>
           <td class="actions">
             <button class="btn btn-sm btn-danger delete-append-repo">删除</button>
           </td>
         </tr>
       \`;
+    }
+
+    function sortBranches(branches) {
+      const priority = ['main', 'master', 'develop', 'development'];
+      return [...branches].sort((a, b) => {
+        const ai = priority.indexOf(a);
+        const bi = priority.indexOf(b);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        return a.localeCompare(b);
+      });
+    }
+
+    function getBranchClass(context) {
+      return context === 'append' ? 'append-branch' : 'repo-branch';
+    }
+
+    function renderBranchInput(cell, context, value) {
+      const cls = getBranchClass(context);
+      const val = escapeAttr(value || 'main');
+      cell.innerHTML = \`<input type="text" class="\${cls}" placeholder="main" value="\${val}">\`;
+    }
+
+    function renderBranchSelect(cell, branches, context) {
+      const cls = getBranchClass(context);
+      const sorted = sortBranches(branches);
+      const defaultBranch = sorted.find(b => ['main', 'master'].includes(b)) || sorted[0] || 'main';
+      const options = sorted.map(b =>
+        \`<option value="\${escapeAttr(b)}"\${b === defaultBranch ? ' selected' : ''}>\${escapeAttr(b)}</option>\`
+      ).join('');
+      cell.innerHTML = \`<select class="\${cls}" style="width:100%">\${options}</select>\`;
+    }
+
+    function loadBranchesForRow(row, gitUrl, context) {
+      const cell = row.querySelector('.branch-cell-container');
+      if (!cell) return;
+
+      if (!gitUrl) {
+        delete row.dataset.branchRequestId;
+        renderBranchInput(cell, context, 'main');
+        return;
+      }
+
+      const requestId = ++branchRequestCounter;
+      row.dataset.branchRequestId = String(requestId);
+      row.dataset.branchContext = context;
+      const cls = getBranchClass(context);
+      cell.innerHTML = \`<select class="\${cls}" style="width:100%" disabled><option>加载分支中...</option></select>\`;
+      vscode.postMessage({ type: 'fetchRemoteBranches', gitUrl, requestId, context });
     }
 
     function switchWorkMode(mode) {
@@ -946,7 +1008,9 @@ export class FormView {
       const newRow = document.createElement('tr');
       newRow.innerHTML = \`
         <td><input type="text" class="repo-url" placeholder="https://github.com/username/repo.git"></td>
-        <td><input type="text" class="repo-branch" placeholder="main" value="main"></td>
+        <td class="branch-cell-container">
+          <input type="text" class="repo-branch" placeholder="main" value="main">
+        </td>
         <td class="actions">
           <button class="btn btn-sm btn-danger delete-repo">删除</button>
         </td>
@@ -965,6 +1029,13 @@ export class FormView {
         } else {
           log('至少保留一个仓库', 'error');
         }
+      }
+    });
+
+    document.getElementById('repoTable').addEventListener('change', (e) => {
+      if (e.target.classList.contains('repo-url')) {
+        const row = e.target.closest('tr');
+        loadBranchesForRow(row, e.target.value.trim(), 'create');
       }
     });
 
@@ -1013,6 +1084,13 @@ export class FormView {
         } else {
           log('至少保留一个工程行', 'error');
         }
+      }
+    });
+
+    document.getElementById('appendRepoTable').addEventListener('change', (e) => {
+      if (e.target.classList.contains('append-template-select')) {
+        const row = e.target.closest('tr');
+        loadBranchesForRow(row, e.target.value.trim(), 'append');
       }
     });
 
@@ -1069,9 +1147,11 @@ export class FormView {
         return;
       }
 
-      const firstRepoUrl = document.querySelector('.repo-url');
+      const firstRow = document.querySelector('#repoBody tr');
+      const firstRepoUrl = firstRow?.querySelector('.repo-url');
       if (firstRepoUrl) {
         firstRepoUrl.value = selectedUrl;
+        loadBranchesForRow(firstRow, selectedUrl, 'create');
         log(\`已加载工程: \${selectedUrl}\`, 'info');
       }
     });
@@ -1086,7 +1166,9 @@ export class FormView {
       repoBody.innerHTML = \`
         <tr>
           <td><input type="text" class="repo-url" placeholder="https://github.com/username/repo.git"></td>
-          <td><input type="text" class="repo-branch" placeholder="main" value="main"></td>
+          <td class="branch-cell-container">
+            <input type="text" class="repo-branch" placeholder="main" value="main">
+          </td>
           <td class="actions">
             <button class="btn btn-sm btn-danger delete-repo">删除</button>
           </td>
@@ -1185,6 +1267,26 @@ export class FormView {
         document.getElementById('requirementInfo').style.display = 'block';
         renderExistingRepos(req.repositories);
         log(\`已加载需求「\${req.name}」，共 \${req.repositories?.length || 0} 个工程\`, 'success');
+      }
+
+      if (message.type === 'remoteBranchesLoaded') {
+        const rows = document.querySelectorAll('#appendRepoBody tr, #repoBody tr');
+        for (const row of rows) {
+          if (row.dataset.branchRequestId === String(message.requestId)) {
+            const cell = row.querySelector('.branch-cell-container');
+            const context = row.dataset.branchContext || message.context;
+            if (cell) {
+              if (message.branches && message.branches.length > 0) {
+                renderBranchSelect(cell, message.branches, context);
+                log(\`已加载 \${message.branches.length} 个远程分支\`, 'success');
+              } else {
+                renderBranchInput(cell, context, 'main');
+                log('无法获取远程分支，请手动输入', 'error');
+              }
+            }
+            break;
+          }
+        }
       }
 
       if (message.type === 'repoBranchRefreshed') {
@@ -1287,6 +1389,19 @@ export class FormView {
           repoPath,
           branch: branch || '(未知分支)',
           gitUrl: gitUrl || '(无远程地址)'
+        });
+        break;
+      }
+
+      case 'fetchRemoteBranches': {
+        const gitUrl = message.gitUrl as string;
+        const branches = await GitService.getRemoteBranches(gitUrl);
+        this.panel?.webview.postMessage({
+          type: 'remoteBranchesLoaded',
+          gitUrl,
+          requestId: message.requestId,
+          context: message.context,
+          branches
         });
         break;
       }
