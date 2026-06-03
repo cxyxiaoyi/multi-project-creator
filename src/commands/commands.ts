@@ -521,32 +521,25 @@ export class FormView {
       </div>
     </div>
 
-    <!-- Select Project Template -->
-    <div class="form-group">
-      <label for="projectSelect">选择工程:</label>
-      <div class="input-row">
-        <select id="projectSelect">
-          <option value="">-- 选择已保存的工程 --</option>
-          ${templateOptions}
-        </select>
-        <button class="btn btn-secondary" id="useTemplate">使用选中工程</button>
-      </div>
-    </div>
-
     <!-- Repository List -->
     <div class="repo-section">
       <label>Git 仓库列表</label>
       <table class="repo-table" id="repoTable">
         <thead>
           <tr>
-            <th style="width: 60%;">仓库 URL</th>
-            <th style="width: 30%;">分支名</th>
-            <th style="width: 10%;" class="actions">操作</th>
+            <th style="width: 40%;">选择工程</th>
+            <th style="width: 40%;">分支名</th>
+            <th style="width: 20%;" class="actions">操作</th>
           </tr>
         </thead>
         <tbody id="repoBody">
           <tr>
-            <td><input type="text" class="repo-url" placeholder="https://github.com/username/repo.git"></td>
+            <td>
+              <select class="create-template-select">
+                <option value="">-- 选择工程 --</option>
+                ${templateOptions}
+              </select>
+            </td>
             <td class="branch-cell-container">
               <input type="text" class="repo-branch" placeholder="main" value="main">
             </td>
@@ -798,40 +791,45 @@ export class FormView {
       \`).join('');
 
       cachedTemplates = templates;
-
-      const select = document.getElementById('projectSelect');
-      const currentValue = select.value;
-      select.innerHTML = '<option value="">-- 选择已保存的工程 --</option>' +
-        templates.map(t => \`<option value="\${t.gitUrl}">\${t.name}</option>\`).join('');
-      select.value = currentValue;
-
-      updateAppendTemplateSelects(templates);
+      updateTemplateSelects();
     }
 
-    function updateAppendTemplateSelects(templates) {
-      const optionsHtml = '<option value="">-- 选择工程 --</option>' +
-        templates.map(t => \`<option value="\${t.gitUrl}">\${t.name}</option>\`).join('');
-      document.querySelectorAll('.append-template-select').forEach(sel => {
+    function getTemplateOptionsHtml() {
+      return '<option value="">-- 选择工程 --</option>' +
+        cachedTemplates.map(t => \`<option value="\${escapeAttr(t.gitUrl)}">\${escapeAttr(t.name)}</option>\`).join('');
+    }
+
+    function updateTemplateSelects() {
+      const optionsHtml = getTemplateOptionsHtml();
+      document.querySelectorAll('.create-template-select, .append-template-select').forEach(sel => {
         const current = sel.value;
         sel.innerHTML = optionsHtml;
         sel.value = current;
       });
     }
 
-    function createAppendRowHtml() {
-      const options = '<option value="">-- 选择工程 --</option>' +
-        cachedTemplates.map(t => \`<option value="\${t.gitUrl}">\${t.name}</option>\`).join('');
+    function createRepoRowHtml(context) {
+      const templateClass = context === 'append' ? 'append-template-select' : 'create-template-select';
+      const deleteClass = context === 'append' ? 'delete-append-repo' : 'delete-repo';
+      const branchClass = getBranchClass(context);
+      const options = getTemplateOptionsHtml();
       return \`
         <tr>
-          <td><select class="append-template-select">\${options}</select></td>
+          <td><select class="\${templateClass}">\${options}</select></td>
           <td class="branch-cell-container">
-            <input type="text" class="append-branch" placeholder="main" value="main">
+            <input type="text" class="\${branchClass}" placeholder="main" value="main">
           </td>
           <td class="actions">
-            <button class="btn btn-sm btn-danger delete-append-repo">删除</button>
+            <button class="btn btn-sm btn-danger \${deleteClass}">删除</button>
           </td>
         </tr>
       \`;
+    }
+
+    function getBranchFromRow(row, context) {
+      const cls = getBranchClass(context);
+      const el = row.querySelector('.' + cls);
+      return el?.value?.trim() || 'main';
     }
 
     function sortBranches(branches) {
@@ -1004,18 +1002,7 @@ export class FormView {
 
     // Repository Functions
     document.getElementById('addRepo').addEventListener('click', () => {
-      const repoBody = document.getElementById('repoBody');
-      const newRow = document.createElement('tr');
-      newRow.innerHTML = \`
-        <td><input type="text" class="repo-url" placeholder="https://github.com/username/repo.git"></td>
-        <td class="branch-cell-container">
-          <input type="text" class="repo-branch" placeholder="main" value="main">
-        </td>
-        <td class="actions">
-          <button class="btn btn-sm btn-danger delete-repo">删除</button>
-        </td>
-      \`;
-      repoBody.appendChild(newRow);
+      document.getElementById('repoBody').insertAdjacentHTML('beforeend', createRepoRowHtml('create'));
       log('添加新仓库行', 'info');
     });
 
@@ -1033,7 +1020,7 @@ export class FormView {
     });
 
     document.getElementById('repoTable').addEventListener('change', (e) => {
-      if (e.target.classList.contains('repo-url')) {
+      if (e.target.classList.contains('create-template-select')) {
         const row = e.target.closest('tr');
         loadBranchesForRow(row, e.target.value.trim(), 'create');
       }
@@ -1072,7 +1059,7 @@ export class FormView {
     });
 
     document.getElementById('addAppendRepo').addEventListener('click', () => {
-      document.getElementById('appendRepoBody').insertAdjacentHTML('beforeend', createAppendRowHtml());
+      document.getElementById('appendRepoBody').insertAdjacentHTML('beforeend', createRepoRowHtml('append'));
     });
 
     document.getElementById('appendRepoTable').addEventListener('click', (e) => {
@@ -1137,43 +1124,12 @@ export class FormView {
       vscode.postMessage({ type: 'browseDirectory', target: 'create' });
     });
 
-    // Use Template
-    document.getElementById('useTemplate').addEventListener('click', () => {
-      const select = document.getElementById('projectSelect');
-      const selectedUrl = select.value;
-
-      if (!selectedUrl) {
-        log('请先选择一个工程', 'error');
-        return;
-      }
-
-      const firstRow = document.querySelector('#repoBody tr');
-      const firstRepoUrl = firstRow?.querySelector('.repo-url');
-      if (firstRepoUrl) {
-        firstRepoUrl.value = selectedUrl;
-        loadBranchesForRow(firstRow, selectedUrl, 'create');
-        log(\`已加载工程: \${selectedUrl}\`, 'info');
-      }
-    });
-
     // Clear Form
     document.getElementById('clearForm').addEventListener('click', () => {
       document.getElementById('workspaceName').value = '';
       document.getElementById('workspacePath').value = '';
-      document.getElementById('projectSelect').value = '';
 
-      const repoBody = document.getElementById('repoBody');
-      repoBody.innerHTML = \`
-        <tr>
-          <td><input type="text" class="repo-url" placeholder="https://github.com/username/repo.git"></td>
-          <td class="branch-cell-container">
-            <input type="text" class="repo-branch" placeholder="main" value="main">
-          </td>
-          <td class="actions">
-            <button class="btn btn-sm btn-danger delete-repo">删除</button>
-          </td>
-        </tr>
-      \`;
+      document.getElementById('repoBody').innerHTML = createRepoRowHtml('create');
 
       document.querySelector('input[name="ide"][value="VSCode"]').checked = true;
       clearLogs();
@@ -1188,8 +1144,8 @@ export class FormView {
       const repoRows = document.querySelectorAll('#repoBody tr');
       const repositories = [];
       repoRows.forEach(row => {
-        const url = row.querySelector('.repo-url').value.trim();
-        const branch = row.querySelector('.repo-branch').value.trim();
+        const url = row.querySelector('.create-template-select')?.value.trim();
+        const branch = getBranchFromRow(row, 'create');
         if (url) {
           repositories.push({ url, branch });
         }
